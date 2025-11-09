@@ -14,6 +14,7 @@ from telegram.ext import (
 import asyncio
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
 from database import (
     initialize_database, add_user_if_not_exists, get_user_accounts,
     delete_account, get_session_string, save_reserved_channel, get_reserved_channels_by_phone,
@@ -117,21 +118,44 @@ async def received_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
 async def received_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handles the login code."""
+    """Handles the login code, and checks if 2FA is needed."""
     code = update.message.text
     client = context.user_data['client']
     phone_number = context.user_data['phone_number']
     phone_code_hash = context.user_data['phone_code_hash']
 
     try:
-        await sign_in_with_code(client, phone_number, code, phone_code_hash)
-        # If 2FA is not needed, sign-in is successful here
-        await finalize_login(update, context, client)
+        # Try to sign in with the code
+        user = await sign_in_with_code(client, phone_number, code, phone_code_hash)
+        # If sign_in_with_code returns a user, it means 2FA was NOT needed and login is complete.
+        if user:
+            await update.message.reply_text("تم تسجيل الدخول بنجاح (لم يكن التحقق بخطوتين مطلوباً).")
+            await finalize_login(update, context, client)
+            return ConversationHandler.END
+        # If it returns None without an exception, it's an unknown error.
+        else:
+            await update.message.reply_text("حدث خطأ غير متوقع أثناء محاولة تسجيل الدخول.")
+            await client.disconnect()
+            return ConversationHandler.END
+
+    except SessionPasswordNeededError:
+        # This is the expected case for 2FA. Telegram is asking for the password.
+        logger.info(f"2FA password needed for {phone_number}.")
+        await update.message.reply_text("الحساب محمي. الرجاء إرسال كلمة مرور التحقق بخطوتين.")
+        return PASSWORD
+
+    except PhoneCodeInvalidError:
+        logger.warning(f"Invalid code entered for {phone_number}.")
+        await update.message.reply_text("الرمز الذي أدخلته غير صحيح. تم إلغاء العملية.")
+        await client.disconnect()
         return ConversationHandler.END
 
-    except Exception: # Simplified for now
-        await update.message.reply_text("الرجاء إرسال كلمة مرور التحقق بخطوتين.")
-        return PASSWORD
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during code sign-in for {phone_number}: {e}")
+        await update.message.reply_text("حدث خطأ فادح أثناء التحقق من الرمز. تم إلغاء العملية.")
+        if client.is_connected():
+            await client.disconnect()
+        return ConversationHandler.END
 
 async def received_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the 2FA password."""
