@@ -364,22 +364,24 @@ async def run_username_checker(update: Update, context: ContextTypes.DEFAULT_TYP
             await asyncio.sleep(5)
 
             stats["total"] += 1
-            is_available, wait_time = await check_username_availability(client, username)
+            status, wait_time = await check_username_availability(client, username)
 
-            if wait_time:
-                # Flood wait triggered
+            if status == 'flood':
                 flood_message = f"تم حظري مؤقتاً. سأنتظر لمدة {wait_time} ثانية ثم أكمل."
                 await context.bot.send_message(user_id, flood_message)
                 await asyncio.sleep(wait_time)
-                continue
+                continue # Re-check the same username after waiting
 
-            if is_available:
+            if status == 'invalid':
+                stats["unavailable"] += 1 # Count invalid as unavailable
+                continue # Skip to the next username
+
+            if status == 'available':
                 stats["available"].append(username)
-                # Attempt to reserve it
                 reserved = await create_channel_and_set_username(client, username)
                 if reserved:
                     save_reserved_channel(username, phone_number)
-            else:
+            else: # 'occupied' or 'error'
                 stats["unavailable"] += 1
 
             # Update status message every 5 checks
@@ -429,14 +431,22 @@ def main():
     logger.info("Setting up bot...")
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # --- Conversation Handler for adding/removing admins (simplified) ---
+    # --- Conversation Handler for adding/removing admins ---
+    async def ask_for_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
+        """Helper to start the admin add/remove conversation."""
+        query = update.callback_query
+        await query.answer()
+        prompt = "أرسل ID المشرف الجديد الذي تريد إضافته:" if action == "add" else "أرسل ID المشرف الذي تريد حذفه:"
+        await query.edit_message_text(text=prompt)
+        return 0 # Move to the state where we wait for the ID
+
     add_admin_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(lambda u,c: c.bot.send_message(u.effective_chat.id, "أرسل ID المشرف الجديد."), pattern='^admin_add_admin$')],
+        entry_points=[CallbackQueryHandler(lambda u, c: ask_for_admin_id(u, c, "add"), pattern='^admin_add_admin$')],
         states={0: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_admin_received)]},
         fallbacks=[CommandHandler('cancel', cancel)],
     )
     remove_admin_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(lambda u,c: c.bot.send_message(u.effective_chat.id, "أرسل ID المشرف لحذفه."), pattern='^admin_remove_admin$')],
+        entry_points=[CallbackQueryHandler(lambda u, c: ask_for_admin_id(u, c, "remove"), pattern='^admin_remove_admin$')],
         states={0: [MessageHandler(filters.TEXT & ~filters.COMMAND, remove_admin_received)]},
         fallbacks=[CommandHandler('cancel', cancel)],
     )
@@ -461,7 +471,16 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
 
     logger.info("Bot is starting...")
-    application.run_polling()
+    try:
+        application.run_polling()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot shutting down...")
+        # Cancel any running checker tasks
+        for task in active_checkers.values():
+            if not task.done():
+                task.cancel()
+        logger.info("All checker tasks cancelled. Goodbye!")
+
 
 async def add_admin_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receives the ID for the new admin."""

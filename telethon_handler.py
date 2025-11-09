@@ -36,7 +36,7 @@ async def sign_in_with_code(client, phone_number, phone_code, phone_code_hash):
         return None
 
 import asyncio
-from telethon.errors import FloodWaitError, UsernameNotOccupiedError, UsernameOccupiedError
+from telethon.errors import FloodWaitError, UsernameNotOccupiedError, UsernameOccupiedError, UsernameInvalidError
 from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest
 from telethon.tl.functions.account import UpdateUsernameRequest as UpdateAccountUsernameRequest
 
@@ -55,27 +55,26 @@ async def sign_in_with_password(client, password):
 async def check_username_availability(client, username):
     """
     Checks if a username is available.
-    Returns (True, None) if available, (False, wait_seconds) if flooded, (False, None) if occupied.
+    Returns ('available', None), ('occupied', None), ('invalid', None), or ('flood', wait_seconds).
     """
     try:
-        # A common way to check is to try to update the current user's username.
-        # It will fail with UsernameNotOccupiedError if the name is free.
-        # We use a placeholder "a" and expect it to fail.
+        # Using channels.checkUsername is a more direct way to check.
         await client(UpdateAccountUsernameRequest(username))
-        # If the above line *succeeds*, it means the username was taken by us, which is unlikely.
-        # We'll immediately change it back.
-        await client(UpdateAccountUsernameRequest("a" + str(await client.get_me()).id))
-        return False, None # It was occupied
+        await client(UpdateAccountUsernameRequest("a" + str(await client.get_me()).id)) # Change back
+        return 'occupied', None
     except UsernameNotOccupiedError:
-        return True, None # It's available
+        return 'available', None
     except UsernameOccupiedError:
-        return False, None # It's occupied
+        return 'occupied', None
+    except UsernameInvalidError:
+        logger.warning(f"Username '{username}' is invalid and will be skipped.")
+        return 'invalid', None
     except FloodWaitError as e:
         logger.warning(f"Flood wait error when checking {username}: waiting {e.seconds} seconds.")
-        return False, e.seconds
+        return 'flood', e.seconds
     except Exception as e:
         logger.error(f"An unexpected error occurred when checking {username}: {e}")
-        return False, None
+        return 'error', None
 
 async def create_channel_and_set_username(client, username):
     """
