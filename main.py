@@ -404,6 +404,12 @@ async def run_username_checker(update: Update, context: ContextTypes.DEFAULT_TYP
                 reserved = await create_channel_and_set_username(client, username)
                 if reserved:
                     save_reserved_channel(username, phone_number)
+                    # Send a notification to the user
+                    await context.bot.send_message(
+                        user_id,
+                        f"🎉 **تم بنجاح حجز اسم المستخدم:** @{username}",
+                        parse_mode='Markdown'
+                    )
 
             # Throttle updates to avoid hitting Telegram API limits
             current_time = asyncio.get_event_loop().time()

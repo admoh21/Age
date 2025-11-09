@@ -36,9 +36,8 @@ async def sign_in_with_code(client, phone_number, phone_code, phone_code_hash):
         return None
 
 import asyncio
-from telethon.errors import FloodWaitError, UsernameNotOccupiedError, UsernameOccupiedError, UsernameInvalidError
-from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest
-from telethon.tl.functions.account import UpdateUsernameRequest as UpdateAccountUsernameRequest
+from telethon.errors import FloodWaitError, UsernameInvalidError
+from telethon.tl.functions.channels import CheckUsernameRequest, CreateChannelRequest, UpdateUsernameRequest
 
 
 async def sign_in_with_password(client, password):
@@ -54,27 +53,34 @@ async def sign_in_with_password(client, password):
 
 async def check_username_availability(client, username):
     """
-    Checks if a username is available.
+    Safely checks if a username is available using channels.CheckUsernameRequest.
     Returns ('available', None), ('occupied', None), ('invalid', None), or ('flood', wait_seconds).
     """
     try:
-        # Using channels.checkUsername is a more direct way to check.
-        await client(UpdateAccountUsernameRequest(username))
-        await client(UpdateAccountUsernameRequest("a" + str(await client.get_me()).id)) # Change back
-        return 'occupied', None
-    except UsernameNotOccupiedError:
-        return 'available', None
-    except UsernameOccupiedError:
-        return 'occupied', None
+        # This is the correct, safe method to check a username.
+        # It checks the username for a channel, which is what we want.
+        # A result of True means the username is available.
+        result = await client(CheckUsernameRequest(username=username))
+        if result:
+            return 'available', None
+        else:
+            # This 'else' case is ambiguous; it could be taken or invalid.
+            # We rely on specific error handling for clarity.
+            return 'occupied', None
+
     except UsernameInvalidError:
-        logger.warning(f"Username '{username}' is invalid and will be skipped.")
+        logger.warning(f"Username '{username}' is invalid according to Telegram and will be skipped.")
         return 'invalid', None
+
     except FloodWaitError as e:
         logger.warning(f"Flood wait error when checking {username}: waiting {e.seconds} seconds.")
         return 'flood', e.seconds
+
     except Exception as e:
-        logger.error(f"An unexpected error of type {type(e).__name__} occurred when checking {username}: {e}")
-        return 'error', None
+        # A generic error usually implies the username is taken or there's a connection issue.
+        # We'll log it and treat it as 'occupied' to be safe.
+        logger.error(f"An error of type {type(e).__name__} occurred for '{username}': {e}")
+        return 'occupied', None
 
 async def create_channel_and_set_username(client, username):
     """
