@@ -73,7 +73,7 @@ async def check_username_availability(client, username):
         logger.warning(f"Flood wait error when checking {username}: waiting {e.seconds} seconds.")
         return 'flood', e.seconds
     except Exception as e:
-        logger.error(f"An unexpected error occurred when checking {username}: {e}")
+        logger.error(f"An unexpected error of type {type(e).__name__} occurred when checking {username}: {e}")
         return 'error', None
 
 async def create_channel_and_set_username(client, username):
