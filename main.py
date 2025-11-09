@@ -364,52 +364,50 @@ async def show_reserved_channels(update: Update, context: ContextTypes.DEFAULT_T
 # --- Username Checker Logic ---
 
 async def run_username_checker(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id, phone_number):
-    """The main async task for checking usernames."""
+    """The main async task for checking usernames with live message updates."""
     session_string = get_session_string(phone_number)
     if not session_string:
         await context.bot.send_message(user_id, "خطأ: لم يتم العثور على جلسة لهذا الحساب.")
         return
 
-    client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
-    await client.connect()
+    # Send initial status message and store its ID
+    status_message = await context.bot.send_message(
+        user_id, "Starting username check...",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 إيقاف الفحص", callback_data='stop_check')]])
+    )
+    last_update_time = asyncio.get_event_loop().time()
 
-    stats = {
-        "total": 0,
-        "available": [],
-        "unavailable": 0
-    }
+    client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
+    stats = {"total": 0, "available": [], "unavailable": 0}
 
     try:
+        await client.connect()
         username_gen = generate_usernames()
+
         for username in username_gen:
-            # --- Configurable Delay ---
-            # You can change this value to speed up or slow down the checker.
-            # A lower value increases the risk of flood waits.
-            await asyncio.sleep(5)
+            await asyncio.sleep(5)  # Configurable Delay
 
             stats["total"] += 1
             status, wait_time = await check_username_availability(client, username)
 
             if status == 'flood':
-                flood_message = f"تم حظري مؤقتاً. سأنتظر لمدة {wait_time} ثانية ثم أكمل."
-                await context.bot.send_message(user_id, flood_message)
+                await context.bot.send_message(user_id, f"تم حظري مؤقتاً. سأنتظر لمدة {wait_time} ثانية ثم أكمل.")
                 await asyncio.sleep(wait_time)
-                continue # Re-check the same username after waiting
+                continue
 
-            if status == 'invalid':
-                stats["unavailable"] += 1 # Count invalid as unavailable
-                continue # Skip to the next username
-
-            if status == 'available':
+            if status == 'invalid' or status == 'error':
+                stats["unavailable"] += 1
+            elif status == 'occupied':
+                stats["unavailable"] += 1
+            elif status == 'available':
                 stats["available"].append(username)
                 reserved = await create_channel_and_set_username(client, username)
                 if reserved:
                     save_reserved_channel(username, phone_number)
-            else: # 'occupied' or 'error'
-                stats["unavailable"] += 1
 
-            # Update status message every 5 checks
-            if stats["total"] % 5 == 0:
+            # Throttle updates to avoid hitting Telegram API limits
+            current_time = asyncio.get_event_loop().time()
+            if current_time - last_update_time >= 1: # Update at most once per second
                 status_text = (
                     f"🔄 **جاري فحص أسماء المستخدمين...**\n\n"
                     f"📞 **رقم الهاتف:** `{phone_number}`\n"
@@ -419,15 +417,21 @@ async def run_username_checker(update: Update, context: ContextTypes.DEFAULT_TYP
                     f"❌ **غير المتاحة:** {stats['unavailable']}\n"
                     f"📊 **الإجمالي:** {stats['total']}"
                 )
-                await context.bot.send_message(
-                    user_id,
-                    status_text,
-                    parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 إيقاف الفحص", callback_data='stop_check')]])
-                )
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=user_id,
+                        message_id=status_message.message_id,
+                        text=status_text,
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 إيقاف الفحص", callback_data='stop_check')]])
+                    )
+                    last_update_time = current_time
+                except Exception as e:
+                    logger.warning(f"Could not update status message: {e}")
 
     except asyncio.CancelledError:
         logger.info(f"Checker task for user {user_id} was cancelled.")
+        await context.bot.edit_message_text(chat_id=user_id, message_id=status_message.message_id, text="تم إيقاف عملية الفحص.")
     except Exception as e:
         logger.error(f"An error occurred in the checker for user {user_id}: {e}")
         await context.bot.send_message(user_id, "حدث خطأ فادح وتوقفت عملية الفحص.")
@@ -437,7 +441,9 @@ async def run_username_checker(update: Update, context: ContextTypes.DEFAULT_TYP
         if user_id in active_checkers:
             del active_checkers[user_id]
         logger.info(f"Checker task for user {user_id} finished.")
-        await context.bot.send_message(user_id, "انتهت عملية الفحص.")
+        # Final update message
+        final_text = f"انتهت عملية الفحص. \nالإجمالي: {stats['total']}, المتاحة: {len(stats['available'])}"
+        await context.bot.edit_message_text(chat_id=user_id, message_id=status_message.message_id, text=final_text)
 
 
 # --- Main Application Logic ---
