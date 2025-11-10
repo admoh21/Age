@@ -44,27 +44,26 @@ async def submit_2fa_password(client, password):
     except Exception as e:
         return None, str(e)
 
-async def create_group(client, group_name):
-    """Creates a group, sends 5 messages, and converts it to a supergroup."""
+async def create_group(client, group_name, messages):
+    """Creates a group, sends specified messages, and returns the group info."""
     try:
-        # 1. Create the group
-        created_chat = await client(CreateChatRequest(
-            users=["me"],  # You can add other users here if you want
+        # 1. Create the group with just the user themselves
+        result = await client(CreateChatRequest(
+            users=['me'],
             title=group_name
         ))
-        chat_id = created_chat.chats[0].id
+        chat = result.chats[0]
+        chat_id = chat.id
 
-        # 2. Send 5 messages
-        for i in range(5):
-            await client(SendMessageRequest(
-                peer=chat_id,
-                message=f"رسالة تلقائية {i+1}"
-            ))
-            await asyncio.sleep(1) # Small delay between messages
+        # 2. Send the specified messages
+        for message in messages:
+            await client.send_message(chat_id, message)
+            await asyncio.sleep(1)  # Small delay between messages to appear more natural
 
-        # 3. Convert to supergroup
-        await client(ConvertToGigagroupRequest(channel_id=chat_id))
+        # 3. Get the invite link (optional, but good to have)
+        invite_link_result = await client(ExportChatInviteRequest(peer=chat_id))
+        invite_link = invite_link_result.link
 
-        return "SUCCESS", None
+        return {"status": "SUCCESS", "id": chat_id, "name": group_name, "link": invite_link}, None
     except Exception as e:
         return None, str(e)
