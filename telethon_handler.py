@@ -52,15 +52,12 @@ async def create_group(client, group_name, messages):
 
         # 2. Robustly find the chat ID from the response
         chat = None
+        # Case 1: The result object itself has the .chats list (e.g., Updates)
         if hasattr(result, 'chats') and result.chats:
             chat = result.chats[0]
-        else:
-            # Fallback for different response structures, sometimes it's in 'updates'
-            for update in getattr(result, 'updates', []):
-                if hasattr(update, 'channel_id'):
-                    chat_entity = await client.get_entity(update.channel_id)
-                    chat = chat_entity
-                    break
+        # Case 2: The result has an .updates attribute which contains the chats list (e.g., InvitedUsers)
+        elif hasattr(result, 'updates') and hasattr(result.updates, 'chats') and result.updates.chats:
+            chat = result.updates.chats[0]
 
         if not chat:
             raise Exception("Could not find chat information in the response.")

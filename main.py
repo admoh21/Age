@@ -18,7 +18,7 @@ from database import (
     initialize_database, add_user, add_account, get_user_accounts,
     delete_account, get_groups_created_today, increment_groups_created,
     add_group, get_user_groups, update_account_ban_status, get_total_groups_by_phone,
-    update_account_status
+    get_total_groups_by_user, update_account_status
 )
 import telethon_handler
 from telethon import TelegramClient
@@ -339,7 +339,14 @@ async def create_groups_handler(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['stop_creation'] = False
 
     client = TelegramClient(f"{phone}.session", API_ID, API_HASH)
-    messages_to_send = ["مرحبًا!", "كيف حالكم؟", "أتمنى أن تكونوا بخير.", "هذه رسالة تجريبية.", "شكرًا لكم."]
+    # Define the 5 welcome messages
+    messages_to_send = [
+        "✨ أهلًا وسهلًا بكم في مجموعتنا! نتمنى لكم وقتًا ممتعًا ومفيدًا. ✨",
+        "🎉 مرحبًا بالجميع! يسعدنا انضمامكم إلينا.",
+        "👋 تحية طيبة! هذه المجموعة هي مساحتكم للتواصل والنقاش.",
+        "🚀 انطلقنا! مرحبًا بكم على متن مجموعتنا الجديدة.",
+        "💬 بداية جديدة! شاركونا أفكاركم وآراءكم. أهلًا بكم."
+    ]
 
     try:
         await client.connect()
@@ -347,15 +354,21 @@ async def create_groups_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=status_message.message_id, text="فشل تسجيل الدخول. يرجى حذف الحساب وإضافته مرة أخرى.", reply_markup=get_main_menu_keyboard())
             return ConversationHandler.END
 
+        # Get the total number of groups the USER has created so far as a starting point.
+        initial_user_groups = get_total_groups_by_user(update.effective_user.id)
+
         for i in range(count):
             if context.user_data.get('stop_creation'):
                 await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=status_message.message_id, text="تم إيقاف الإنشاء بناءً على طلبك.", reply_markup=get_main_menu_keyboard())
                 return ConversationHandler.END
 
-            groups_created_so_far = get_groups_created_today(phone)
-            group_num = groups_created_so_far + 1
+            # Calculate the correct group number and name based on user's total groups
+            group_num = initial_user_groups + i + 1
             current_date = datetime.now().strftime("%Y-%m-%d")
             group_name = f"Group {group_num} {current_date}"
+
+            # Get the number of groups created *today* by the *phone* for the status message
+            groups_created_so_far_today = get_groups_created_today(phone)
 
             # Update status message
             status_text = f"""
@@ -363,8 +376,8 @@ async def create_groups_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 - **الحساب:** `{phone}`
 - **حالة الحساب:** `نشط` ✅
-- **التقدم:** `{i}/{count}`
-- **المجموعات اليوم:** `{groups_created_so_far}`
+- **التقدم:** `{i + 1}/{count}`
+- **المجموعات اليوم:** `{groups_created_so_far_today}`
 - **جاري إنشاء:** `{group_name}`
 """
             await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=status_message.message_id, text=status_text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 إيقاف الإنشاء", callback_data='stop_creation')]]))

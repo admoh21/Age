@@ -154,6 +154,15 @@ def get_total_groups_by_phone(phone_number):
     conn.close()
     return count
 
+def get_total_groups_by_user(user_id):
+    """Gets the total number of groups created by a specific user across all their accounts."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM groups WHERE user_id = ?", (user_id,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
 if __name__ == '__main__':
     initialize_database()
     print("Database initialized successfully.")
