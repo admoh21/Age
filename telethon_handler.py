@@ -52,7 +52,16 @@ async def create_group(client, group_name, messages):
             users=['me'],
             title=group_name
         ))
-        chat = result.chats[0]
+
+        # The API can return updates in different structures. We need to find the chat.
+        chat = None
+        if hasattr(result, 'chats') and result.chats:
+            chat = result.chats[0]
+        # Fallback for different structures if needed, though this is the most common.
+
+        if not chat:
+            raise Exception("Could not find chat information in the response.")
+
         chat_id = chat.id
 
         # 2. Send the specified messages
@@ -60,7 +69,7 @@ async def create_group(client, group_name, messages):
             await client.send_message(chat_id, message)
             await asyncio.sleep(1)  # Small delay between messages to appear more natural
 
-        # 3. Get the invite link (optional, but good to have)
+        # 3. Get the invite link
         invite_link_result = await client(ExportChatInviteRequest(peer=chat_id))
         invite_link = invite_link_result.link
 

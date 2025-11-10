@@ -17,7 +17,8 @@ from telegram.ext import (
 from database import (
     initialize_database, add_user, add_account, get_user_accounts,
     delete_account, get_groups_created_today, increment_groups_created,
-    add_group, get_user_groups, update_account_ban_status, get_total_groups_by_phone
+    add_group, get_user_groups, update_account_ban_status, get_total_groups_by_phone,
+    update_account_status
 )
 import telethon_handler
 from telethon import TelegramClient
