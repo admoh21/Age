@@ -261,6 +261,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- ADMIN BUTTONS ---
     elif command == 'admin_toggle_bot':
+        if user_id not in ADMINS:
+            await query.answer("ليس لديك صلاحية لتنفيذ هذا الإجراء.", show_alert=True)
+            return
         return await toggle_bot_status_callback(update, context)
 
     # --- ROUTER LOGIC ---
@@ -471,6 +474,12 @@ def main():
     async def ask_for_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
         """Helper to start the admin add/remove conversation."""
         query = update.callback_query
+        user_id = update.effective_user.id
+
+        if user_id not in ADMINS:
+            await query.answer("ليس لديك صلاحية لتنفيذ هذا الإجراء.", show_alert=True)
+            return ConversationHandler.END
+
         await query.answer()
         prompt = "أرسل ID المشرف الجديد الذي تريد إضافته:" if action == "add" else "أرسل ID المشرف الذي تريد حذفه:"
         await query.edit_message_text(text=prompt)
