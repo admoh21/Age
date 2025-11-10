@@ -64,6 +64,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("👤 حساباتي", callback_data='my_accounts')],
         [InlineKeyboardButton("🔍 فحص أسماء المستخدمين", callback_data='check_usernames')],
         [InlineKeyboardButton("📺 عرض القنوات المحجوزة", callback_data='view_channels')],
+        [InlineKeyboardButton("📜 إخلاء المسؤولية", callback_data='disclaimer')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -91,6 +92,22 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(message_text, reply_markup=reply_markup)
     else:
         logger.warning(f"Unauthorized /admin attempt by user {user_id}")
+
+async def show_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the disclaimer message."""
+    query = update.callback_query
+    await query.answer()
+
+    disclaimer_text = (
+        "📜 **إخلاء المسؤولية** 📜\n\n"
+        "أنت تستخدم هذا البوت على مسؤوليتك الكاملة. قد يؤدي الاستخدام المفرط لميزة فحص أسماء المستخدمين إلى تقييد أو حظر حسابك من قبل تيليجرام.\n\n"
+        "المطور غير مسؤول عن أي ضرر قد يلحق بحسابك نتيجة استخدامك للبوت. يُنصح باستخدامه بحذر واعتدال.\n\n"
+        "- المطور: @urrrrn"
+    )
+    keyboard = [[InlineKeyboardButton("🔙 العودة إلى القائمة الرئيسية", callback_data='main_menu')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text=disclaimer_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 # --- Conversation States ---
 PHONE, CODE, PASSWORD = range(3)
@@ -280,6 +297,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'check_usernames': choose_account_for_checking,
         'view_channels': choose_account_for_viewing_channels,
         'admin_panel': admin_panel,
+        'disclaimer': show_disclaimer,
     }
 
     if command in command_routes:
