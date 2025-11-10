@@ -23,8 +23,8 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS accounts (
             phone_number TEXT PRIMARY KEY,
             user_id INTEGER,
-            api_id INTEGER,
-            api_hash TEXT,
+            status TEXT DEFAULT 'active',
+            ban_expires_at TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (user_id)
         )
     ''')
@@ -40,6 +40,19 @@ def initialize_database():
         )
     ''')
 
+    # Table to store created groups
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS groups (
+            group_id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            group_name TEXT,
+            invite_link TEXT,
+            created_by_phone TEXT,
+            FOREIGN KEY (user_id) REFERENCES users (user_id),
+            FOREIGN KEY (created_by_phone) REFERENCES accounts (phone_number)
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -51,33 +64,39 @@ def add_user(user_id, first_name):
     conn.commit()
     conn.close()
 
-def add_account(user_id, phone_number, api_id, api_hash):
-    """Adds a new account to the database."""
+def add_account(user_id, phone_number):
+    """Adds a new account to the database with default status."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO accounts (user_id, phone_number, api_id, api_hash) VALUES (?, ?, ?, ?)",
-                   (user_id, phone_number, api_id, api_hash))
+    cursor.execute("INSERT OR REPLACE INTO accounts (user_id, phone_number, status) VALUES (?, ?, 'active')",
+                   (user_id, phone_number))
+    conn.commit()
+    conn.close()
+
+def update_account_status(phone_number, status):
+    """Updates the status of an account."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE accounts SET status = ? WHERE phone_number = ?", (status, phone_number))
+    conn.commit()
+    conn.close()
+
+def update_account_ban_status(phone_number, ban_expires_at):
+    """Updates the ban status of an account."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE accounts SET status = 'banned', ban_expires_at = ? WHERE phone_number = ?", (ban_expires_at, phone_number))
     conn.commit()
     conn.close()
 
 def get_user_accounts(user_id):
-    """Gets all accounts for a given user."""
+    """Gets all accounts for a given user, including their status."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT phone_number FROM accounts WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT phone_number, status FROM accounts WHERE user_id = ?", (user_id,))
     accounts = cursor.fetchall()
     conn.close()
-    return [acc[0] for acc in accounts]
-
-def get_account_details(phone_number):
-    """Gets the api_id and api_hash for a given account."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT api_id, api_hash FROM accounts WHERE phone_number = ?", (phone_number,))
-    details = cursor.fetchone()
-    conn.close()
-    return details # (api_id, api_hash)
-
+    return accounts
 
 def delete_account(phone_number):
     """Deletes an account from the database."""
@@ -107,6 +126,42 @@ def increment_groups_created(phone_number):
     cursor.execute("UPDATE group_stats SET groups_created = groups_created + 1 WHERE phone_number = ? AND date = ?", (phone_number, today))
     conn.commit()
     conn.close()
+
+def add_group(user_id, group_id, group_name, invite_link, created_by_phone):
+    """Adds a newly created group to the database."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO groups (user_id, group_id, group_name, invite_link, created_by_phone) VALUES (?, ?, ?, ?, ?)",
+                   (user_id, group_id, group_name, invite_link, created_by_phone))
+    conn.commit()
+    conn.close()
+
+def get_user_groups(user_id):
+    """Gets all groups created by a given user."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT group_name, invite_link FROM groups WHERE user_id = ?", (user_id,))
+    groups = cursor.fetchall()
+    conn.close()
+    return groups
+
+def get_total_groups_by_phone(phone_number):
+    """Gets the total number of groups created by a specific phone number."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM groups WHERE created_by_phone = ?", (phone_number,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_total_groups_by_user(user_id):
+    """Gets the total number of groups created by a specific user across all their accounts."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM groups WHERE user_id = ?", (user_id,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
 
 if __name__ == '__main__':
     initialize_database()

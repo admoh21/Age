@@ -44,27 +44,36 @@ async def submit_2fa_password(client, password):
     except Exception as e:
         return None, str(e)
 
-async def create_group(client, group_name):
-    """Creates a group, sends 5 messages, and converts it to a supergroup."""
+async def create_group(client, group_name, messages):
+    """Creates a group, sends specified messages, and returns the group info."""
     try:
         # 1. Create the group
-        created_chat = await client(CreateChatRequest(
-            users=["me"],  # You can add other users here if you want
-            title=group_name
-        ))
-        chat_id = created_chat.chats[0].id
+        result = await client(CreateChatRequest(users=['me'], title=group_name))
 
-        # 2. Send 5 messages
-        for i in range(5):
-            await client(SendMessageRequest(
-                peer=chat_id,
-                message=f"رسالة تلقائية {i+1}"
-            ))
-            await asyncio.sleep(1) # Small delay between messages
+        # 2. Robustly find the chat ID from the response
+        chat = None
+        # Case 1: The result object itself has the .chats list (e.g., Updates)
+        if hasattr(result, 'chats') and result.chats:
+            chat = result.chats[0]
+        # Case 2: The result has an .updates attribute which contains the chats list (e.g., InvitedUsers)
+        elif hasattr(result, 'updates') and hasattr(result.updates, 'chats') and result.updates.chats:
+            chat = result.updates.chats[0]
 
-        # 3. Convert to supergroup
-        await client(ConvertToGigagroupRequest(channel_id=chat_id))
+        if not chat:
+            raise Exception("Could not find chat information in the response.")
 
-        return "SUCCESS", None
+        chat_id = chat.id
+
+        # 3. Send messages
+        for message in messages:
+            await client.send_message(chat_id, message)
+            await asyncio.sleep(1)
+
+        # 4. Get invite link
+        invite = await client(ExportChatInviteRequest(peer=chat_id))
+
+        return {"status": "SUCCESS", "id": chat_id, "name": group_name, "link": invite.link}, None
+
     except Exception as e:
-        return None, str(e)
+        # Return the actual exception object instead of its string representation
+        return None, e
