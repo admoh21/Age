@@ -47,32 +47,36 @@ async def submit_2fa_password(client, password):
 async def create_group(client, group_name, messages):
     """Creates a group, sends specified messages, and returns the group info."""
     try:
-        # 1. Create the group with just the user themselves
-        result = await client(CreateChatRequest(
-            users=['me'],
-            title=group_name
-        ))
+        # 1. Create the group
+        result = await client(CreateChatRequest(users=['me'], title=group_name))
 
-        # The API can return updates in different structures. We need to find the chat.
+        # 2. Robustly find the chat ID from the response
         chat = None
         if hasattr(result, 'chats') and result.chats:
             chat = result.chats[0]
-        # Fallback for different structures if needed, though this is the most common.
+        else:
+            # Fallback for different response structures, sometimes it's in 'updates'
+            for update in getattr(result, 'updates', []):
+                if hasattr(update, 'channel_id'):
+                    chat_entity = await client.get_entity(update.channel_id)
+                    chat = chat_entity
+                    break
 
         if not chat:
             raise Exception("Could not find chat information in the response.")
 
         chat_id = chat.id
 
-        # 2. Send the specified messages
+        # 3. Send messages
         for message in messages:
             await client.send_message(chat_id, message)
-            await asyncio.sleep(1)  # Small delay between messages to appear more natural
+            await asyncio.sleep(1)
 
-        # 3. Get the invite link
-        invite_link_result = await client(ExportChatInviteRequest(peer=chat_id))
-        invite_link = invite_link_result.link
+        # 4. Get invite link
+        invite = await client(ExportChatInviteRequest(peer=chat_id))
 
-        return {"status": "SUCCESS", "id": chat_id, "name": group_name, "link": invite_link}, None
+        return {"status": "SUCCESS", "id": chat_id, "name": group_name, "link": invite.link}, None
+
     except Exception as e:
-        return None, str(e)
+        # Return the actual exception object instead of its string representation
+        return None, e

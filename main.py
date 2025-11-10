@@ -3,7 +3,7 @@ import configparser
 import logging
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -379,7 +379,7 @@ async def create_groups_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     await update.message.reply_text(f"تم حظر الحساب {phone} مؤقتًا لمدة {ban_duration} ثانية.")
                     break
                 else:
-                    await update.message.reply_text(f"فشل إنشاء المجموعة {group_name}. الخطأ: {error}")
+                    await update.message.reply_text(f"فشل إنشاء المجموعة {group_name}. الخطأ: {str(error)}")
                     await asyncio.sleep(5)
                     continue
 
