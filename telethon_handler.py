@@ -37,6 +37,7 @@ async def sign_in_with_code(client, phone_number, phone_code, phone_code_hash):
 
 import asyncio
 from telethon.errors import FloodWaitError, UsernameInvalidError, UsernameNotOccupiedError
+from telethon.tl import functions
 from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest
 
 
@@ -53,21 +54,22 @@ async def sign_in_with_password(client, password):
 
 async def check_username_availability(client, username):
     """
-    Safely and accurately checks if a username is available using a read-only entity check.
+    Safely and accurately checks if a username is available using ResolveUsernameRequest.
     Returns ('available', None), ('occupied', None), ('invalid', None), or ('flood', wait_seconds).
     """
     try:
-        # client.get_entity() is a read-only way to check for a username's existence.
+        # This is the recommended way to check for a username's existence.
         # If it succeeds, the username is taken.
-        await client.get_entity(username)
+        await client(functions.contacts.ResolveUsernameRequest(username))
         return 'occupied', None
 
     except UsernameNotOccupiedError:
         # This is the definitive confirmation that the username is available.
         return 'available', None
 
-    except (ValueError, TypeError):
-        # ValueError is often raised for invalid-pattern usernames.
+    except (UsernameInvalidError, ValueError, TypeError):
+        # UsernameInvalidError is raised for invalid-pattern usernames by the API.
+        # ValueError can also be raised locally for bad patterns.
         logger.warning(f"Username '{username}' has an invalid format and will be skipped.")
         return 'invalid', None
 
@@ -76,9 +78,9 @@ async def check_username_availability(client, username):
         return 'flood', e.seconds
 
     except Exception as e:
-        # Any other exception likely means the username is taken or another issue occurred.
-        # Treat as 'occupied' to be safe.
-        logger.error(f"An error of type {type(e).__name__} occurred for '{username}': {e}")
+        # Any other exception likely means an issue occurred.
+        # Treat as 'occupied' to be safe and prevent trying to reserve it.
+        logger.error(f"An unexpected error occurred for '{username}': {e}")
         return 'occupied', None
 
 async def create_channel_and_set_username(client, username):
