@@ -15,8 +15,7 @@ from telegram.ext import (
 )
 from database import (
     initialize_database, add_user, add_account, get_user_accounts,
-    delete_account, get_groups_created_today, increment_groups_created,
-    get_account_details
+    delete_account, get_groups_created_today, increment_groups_created
 )
 import telethon_handler
 from telethon import TelegramClient
@@ -40,17 +39,24 @@ GROUP_CREATION_INTERVAL = 60
 # Conversation states
 (
     # Add Account
-    ASK_API_ID, ASK_API_HASH, ASK_PHONE, ASK_CODE, ASK_2FA_PASS,
+    ASK_PHONE, ASK_CODE, ASK_2FA_PASS,
     # Create Groups
     SELECT_ACCOUNT_FOR_CREATION, ASK_GROUP_COUNT,
-) = range(7)
+) = range(5)
 
 (
     # Main Menu callbacks
     ADD_ACCOUNT, MY_ACCOUNTS, START_CREATION,
     # Other callbacks
     DELETE_ACCOUNT, CHOOSE_ACCOUNT_FOR_CREATION,
-) = map(str, range(7, 12))
+) = map(str, range(5, 10))
+
+# --- Global Config ---
+config = configparser.ConfigParser()
+config.read('config.ini')
+API_ID = config['telegram']['api_id']
+API_HASH = config['telegram']['api_hash']
+BOT_TOKEN = config['bot']['bot_token']
 
 
 # --- Main Menu & Common Handlers ---
@@ -102,10 +108,17 @@ async def delete_account_handler(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(text=f"تم حذف الحساب {phone_number} بنجاح.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("عودة إلى الحسابات", callback_data=MY_ACCOUNTS)]]))
 
 # --- Add Account Conversation Functions ---
+async def add_account_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the conversation to add a new account."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(text="أرسل رقم الهاتف مع رمز الدولة (مثال: +1234567890).")
+    return ASK_PHONE
+
 async def ask_code(update, context):
     context.user_data['phone'] = update.message.text
     await update.message.reply_text("جاري محاولة تسجيل الدخول...")
-    client, error = await telethon_handler.start_client_login(context.user_data['api_id'], context.user_data['api_hash'], context.user_data['phone'])
+    client, error = await telethon_handler.start_client_login(API_ID, API_HASH, context.user_data['phone'])
     if error:
         await update.message.reply_text(f"حدث خطأ: {error}\n\nالرجاء المحاولة مرة أخرى.")
         return ConversationHandler.END
@@ -115,7 +128,7 @@ async def ask_code(update, context):
 async def ask_2fa(update, context):
     result, error = await telethon_handler.submit_login_code(context.user_data['client'], context.user_data['phone'], update.message.text)
     if result == "SUCCESS":
-        add_account(update.effective_user.id, context.user_data['phone'], context.user_data['api_id'], context.user_data['api_hash'])
+        add_account(update.effective_user.id, context.user_data['phone'])
         await update.message.reply_text("تم تسجيل الدخول بنجاح! تم حفظ الحساب.")
         await context.user_data['client'].disconnect()
         return ConversationHandler.END
@@ -129,24 +142,25 @@ async def ask_2fa(update, context):
 async def login_with_2fa(update, context):
     result, error = await telethon_handler.submit_2fa_password(context.user_data['client'], update.message.text)
     if result == "SUCCESS":
-        add_account(update.effective_user.id, context.user_data['phone'], context.user_data['api_id'], context.user_data['api_hash'])
+        add_account(update.effective_user.id, context.user_data['phone'])
         await update.message.reply_text("تم تسجيل الدخول بنجاح! تم حفظ الحساب.")
     else:
         await update.message.reply_text(f"حدث خطأ: {error}\n\nالرجاء المحاولة مرة أخرى.")
     await context.user_data['client'].disconnect()
     return ConversationHandler.END
+async def cancel_add_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text('تم إلغاء العملية.', reply_markup=get_main_menu_keyboard())
+    return ConversationHandler.END
 
 # --- Add Account Conversation Handler ---
 add_account_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(lambda u, c: c.bot.send_message(u.effective_chat.id, "أرسل `API_ID` الخاص بك.") or ASK_API_ID, pattern='^' + ADD_ACCOUNT + '$')],
+    entry_points=[CallbackQueryHandler(add_account_start, pattern='^' + ADD_ACCOUNT + '$')],
     states={
-        ASK_API_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.user_data.update({'api_id': u.message.text}) or u.message.reply_text("عظيم! الآن أرسل `API_HASH` الخاص بك.") or ASK_API_HASH)],
-        ASK_API_HASH: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.user_data.update({'api_hash': u.message.text}) or u.message.reply_text("ممتاز. الآن أرسل رقم الهاتف مع رمز الدولة (مثال: +1234567890).") or ASK_PHONE)],
         ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_code)],
         ASK_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_2fa)],
         ASK_2FA_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_with_2fa)],
     },
-    fallbacks=[CommandHandler('cancel', lambda u, c: u.message.reply_text('تم إلغاء العملية.', reply_markup=get_main_menu_keyboard()) or ConversationHandler.END)],
+    fallbacks=[CommandHandler('cancel', cancel_add_account)],
 )
 
 
@@ -193,8 +207,7 @@ async def create_groups_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     await update.message.reply_text(f"حسنًا! سأقوم بإنشاء {count} مجموعة باستخدام الحساب {phone}.\nقد تستغرق هذه العملية بعض الوقت...")
 
-    api_id, api_hash = get_account_details(phone)
-    client = TelegramClient(f"{phone}.session", api_id, api_hash)
+    client = TelegramClient(f"{phone}.session", API_ID, API_HASH)
 
     try:
         await client.connect()
@@ -239,15 +252,12 @@ async def cancel_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 # --- Main Application Setup ---
 def main() -> None:
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    bot_token = config['bot']['bot_token']
-    if 'YOUR_BOT_TOKEN' in bot_token:
-        logger.error("Please replace 'YOUR_BOT_TOKEN' in config.ini")
+    if 'YOUR_BOT_TOKEN' in BOT_TOKEN or 'YOUR_API_ID' in API_ID:
+        logger.error("Please fill in your bot_token, api_id, and api_hash in config.ini")
         return
 
     initialize_database()
-    application = Application.builder().token(bot_token).build()
+    application = Application.builder().token(BOT_TOKEN).build()
 
     create_groups_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_creation_handler, pattern='^' + START_CREATION + '$')],

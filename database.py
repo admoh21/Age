@@ -23,8 +23,6 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS accounts (
             phone_number TEXT PRIMARY KEY,
             user_id INTEGER,
-            api_id INTEGER,
-            api_hash TEXT,
             FOREIGN KEY (user_id) REFERENCES users (user_id)
         )
     ''')
@@ -51,12 +49,12 @@ def add_user(user_id, first_name):
     conn.commit()
     conn.close()
 
-def add_account(user_id, phone_number, api_id, api_hash):
+def add_account(user_id, phone_number):
     """Adds a new account to the database."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO accounts (user_id, phone_number, api_id, api_hash) VALUES (?, ?, ?, ?)",
-                   (user_id, phone_number, api_id, api_hash))
+    cursor.execute("INSERT OR REPLACE INTO accounts (user_id, phone_number) VALUES (?, ?)",
+                   (user_id, phone_number))
     conn.commit()
     conn.close()
 
@@ -68,16 +66,6 @@ def get_user_accounts(user_id):
     accounts = cursor.fetchall()
     conn.close()
     return [acc[0] for acc in accounts]
-
-def get_account_details(phone_number):
-    """Gets the api_id and api_hash for a given account."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT api_id, api_hash FROM accounts WHERE phone_number = ?", (phone_number,))
-    details = cursor.fetchone()
-    conn.close()
-    return details # (api_id, api_hash)
-
 
 def delete_account(phone_number):
     """Deletes an account from the database."""
