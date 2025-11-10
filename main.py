@@ -101,18 +101,7 @@ async def delete_account_handler(update: Update, context: ContextTypes.DEFAULT_T
         os.remove(session_file)
     await query.edit_message_text(text=f"تم حذف الحساب {phone_number} بنجاح.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("عودة إلى الحسابات", callback_data=MY_ACCOUNTS)]]))
 
-# --- Add Account Conversation ---
-add_account_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(lambda u, c: c.bot.send_message(u.effective_chat.id, "أرسل `API_ID` الخاص بك.") or ASK_API_ID, pattern='^' + ADD_ACCOUNT + '$')],
-    states={
-        ASK_API_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.user_data.update({'api_id': u.message.text}) or u.message.reply_text("عظيم! الآن أرسل `API_HASH` الخاص بك.") or ASK_API_HASH)],
-        ASK_API_HASH: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.user_data.update({'api_hash': u.message.text}) or u.message.reply_text("ممتاز. الآن أرسل رقم الهاتف مع رمز الدولة (مثال: +1234567890).") or ASK_PHONE)],
-        ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_code)],
-        ASK_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_2fa)],
-        ASK_2FA_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_with_2fa)],
-    },
-    fallbacks=[CommandHandler('cancel', lambda u, c: u.message.reply_text('تم إلغاء العملية.', reply_markup=get_main_menu_keyboard()) or ConversationHandler.END)],
-)
+# --- Add Account Conversation Functions ---
 async def ask_code(update, context):
     context.user_data['phone'] = update.message.text
     await update.message.reply_text("جاري محاولة تسجيل الدخول...")
@@ -146,6 +135,20 @@ async def login_with_2fa(update, context):
         await update.message.reply_text(f"حدث خطأ: {error}\n\nالرجاء المحاولة مرة أخرى.")
     await context.user_data['client'].disconnect()
     return ConversationHandler.END
+
+# --- Add Account Conversation Handler ---
+add_account_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(lambda u, c: c.bot.send_message(u.effective_chat.id, "أرسل `API_ID` الخاص بك.") or ASK_API_ID, pattern='^' + ADD_ACCOUNT + '$')],
+    states={
+        ASK_API_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.user_data.update({'api_id': u.message.text}) or u.message.reply_text("عظيم! الآن أرسل `API_HASH` الخاص بك.") or ASK_API_HASH)],
+        ASK_API_HASH: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.user_data.update({'api_hash': u.message.text}) or u.message.reply_text("ممتاز. الآن أرسل رقم الهاتف مع رمز الدولة (مثال: +1234567890).") or ASK_PHONE)],
+        ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_code)],
+        ASK_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_2fa)],
+        ASK_2FA_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_with_2fa)],
+    },
+    fallbacks=[CommandHandler('cancel', lambda u, c: u.message.reply_text('تم إلغاء العملية.', reply_markup=get_main_menu_keyboard()) or ConversationHandler.END)],
+)
+
 
 # --- Create Groups Conversation ---
 async def start_creation_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
