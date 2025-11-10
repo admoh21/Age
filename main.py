@@ -84,7 +84,11 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⭐ (قريباً) تفعيل الاشتراك المدفوع", callback_data='admin_soon')],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("--== لوحة تحكم المدير ==--", reply_markup=reply_markup)
+        message_text = "--== لوحة تحكم المدير ==--"
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(message_text, reply_markup=reply_markup)
     else:
         logger.warning(f"Unauthorized /admin attempt by user {user_id}")
 
@@ -227,7 +231,9 @@ async def choose_account_for_checking(update: Update, context: ContextTypes.DEFA
     accounts = get_user_accounts(user_id)
 
     if not accounts:
-        await query.edit_message_text(text="الرجاء إضافة حساب أولاً لبدء الفحص.")
+        keyboard = [[InlineKeyboardButton("🔙 عودة", callback_data='main_menu')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="الرجاء إضافة حساب أولاً لبدء الفحص.", reply_markup=reply_markup)
         return
 
     keyboard = []
@@ -273,6 +279,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'main_menu': start,
         'check_usernames': choose_account_for_checking,
         'view_channels': choose_account_for_viewing_channels,
+        'admin_panel': admin_panel,
     }
 
     if command in command_routes:
@@ -305,7 +312,9 @@ async def stop_checker_callback(update: Update, context: ContextTypes.DEFAULT_TY
     if user_id in active_checkers and not active_checkers[user_id].done():
         active_checkers[user_id].cancel()
         del active_checkers[user_id]
-        await query.edit_message_text(text="تم إيقاف عملية الفحص.")
+        keyboard = [[InlineKeyboardButton("🔙 العودة إلى القائمة الرئيسية", callback_data='main_menu')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="تم إيقاف عملية الفحص.", reply_markup=reply_markup)
     else:
         await query.answer("لا توجد عملية فحص نشطة لإيقافها.", show_alert=True)
 
@@ -335,7 +344,9 @@ async def choose_account_for_viewing_channels(update: Update, context: ContextTy
     accounts = get_user_accounts(user_id)
 
     if not accounts:
-        await query.edit_message_text(text="ليس لديك أي حسابات لعرض قنواتها.")
+        keyboard = [[InlineKeyboardButton("🔙 عودة", callback_data='main_menu')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="ليس لديك أي حسابات لعرض قنواتها.", reply_markup=reply_markup)
         return
 
     keyboard = []
@@ -440,7 +451,8 @@ async def run_username_checker(update: Update, context: ContextTypes.DEFAULT_TYP
 
     except asyncio.CancelledError:
         logger.info(f"Checker task for user {user_id} was cancelled.")
-        await context.bot.edit_message_text(chat_id=user_id, message_id=status_message.message_id, text="تم إيقاف عملية الفحص.")
+        # This part is handled by stop_checker_callback, so no message is needed here.
+        pass
     except Exception as e:
         logger.error(f"An error occurred in the checker for user {user_id}: {e}")
         await context.bot.send_message(user_id, "حدث خطأ فادح وتوقفت عملية الفحص.")
@@ -450,9 +462,12 @@ async def run_username_checker(update: Update, context: ContextTypes.DEFAULT_TYP
         if user_id in active_checkers:
             del active_checkers[user_id]
         logger.info(f"Checker task for user {user_id} finished.")
-        # Final update message
-        final_text = f"انتهت عملية الفحص. \nالإجمالي: {stats['total']}, المتاحة: {len(stats['available'])}"
-        await context.bot.edit_message_text(chat_id=user_id, message_id=status_message.message_id, text=final_text)
+        # Final update message, only if not cancelled
+        if not (update.callback_query and update.callback_query.data == 'stop_check'):
+            final_text = f"انتهت عملية الفحص. \nالإجمالي: {stats['total']}, المتاحة: {len(stats['available'])}"
+            keyboard = [[InlineKeyboardButton("🔙 العودة إلى القائمة الرئيسية", callback_data='main_menu')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.edit_message_text(chat_id=user_id, message_id=status_message.message_id, text=final_text, reply_markup=reply_markup)
 
 
 # --- Main Application Logic ---
@@ -529,29 +544,33 @@ def main():
 
 async def add_admin_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receives the ID for the new admin."""
+    keyboard = [[InlineKeyboardButton("🔙 العودة إلى لوحة التحكم", callback_data='admin_panel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     try:
         new_admin_id = int(update.message.text)
         set_admin_status(new_admin_id, True)
         ADMINS.append(new_admin_id)
-        await update.message.reply_text(f"تمت إضافة {new_admin_id} كمشرف بنجاح.")
+        await update.message.reply_text(f"تمت إضافة {new_admin_id} كمشرف بنجاح.", reply_markup=reply_markup)
     except ValueError:
-        await update.message.reply_text("الرجاء إرسال ID صحيح (رقم).")
+        await update.message.reply_text("الرجاء إرسال ID صحيح (رقم).", reply_markup=reply_markup)
     return ConversationHandler.END
 
 async def remove_admin_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receives the ID for the admin to remove."""
+    keyboard = [[InlineKeyboardButton("🔙 العودة إلى لوحة التحكم", callback_data='admin_panel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     try:
         admin_id_to_remove = int(update.message.text)
         if admin_id_to_remove == ADMIN_USER_ID:
-            await update.message.reply_text("لا يمكن حذف المدير الخارق.")
+            await update.message.reply_text("لا يمكن حذف المدير الخارق.", reply_markup=reply_markup)
             return ConversationHandler.END
 
         set_admin_status(admin_id_to_remove, False)
         if admin_id_to_remove in ADMINS:
             ADMINS.remove(admin_id_to_remove)
-        await update.message.reply_text(f"تم حذف المشرف {admin_id_to_remove} بنجاح.")
+        await update.message.reply_text(f"تم حذف المشرف {admin_id_to_remove} بنجاح.", reply_markup=reply_markup)
     except ValueError:
-        await update.message.reply_text("الرجاء إرسال ID صحيح (رقم).")
+        await update.message.reply_text("الرجاء إرسال ID صحيح (رقم).", reply_markup=reply_markup)
     return ConversationHandler.END
 
 
