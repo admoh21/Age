@@ -1,0 +1,13 @@
+# Database file
+bot_database.db
+
+# Session files
+*.session
+
+# Log files
+bot.log
+
+# IDE and cache files
+__pycache__/
+.idea/
+.vscode/
